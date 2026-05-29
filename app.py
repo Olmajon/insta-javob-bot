@@ -26,22 +26,23 @@ def verify_webhook():
 @app.route('/webhook', methods=['POST'])
 def receive_message():
     data = request.json
-    print("YANGI XABAR KELDI:", data)
+    print("KELGAN DATA:", data) # Nima kelayotganini aniq ko'ramiz
 
-    # Agar xabar Instagramdan kelgan bo'lsa
     if data.get('object') == 'instagram':
         for entry in data.get('entry', []):
             for messaging_event in entry.get('messaging', []):
+                sender_id = messaging_event.get('sender', {}).get('id')
                 
-                # Faqat boshqalar yozgan xabarga javob berish (bot o'ziga o'zi yozib 'loop' bo'lib qolmasligi uchun)
-                if 'message' in messaging_event and 'is_echo' not in messaging_event['message']:
-                    sender_id = messaging_event['sender']['id']
-                    message_text = messaging_event['message'].get('text')
-                    
-                    if message_text:
-                        # Mijozlarga yuboriladigan birlamchi avto-javob matni
-                        reply_text = "Assalomu alaykum! Xabaringizni qabul qildik. Tez orada sizga javob beramiz."
-                        send_message(sender_id, reply_text)
+                # Yangi kod: xabar matni borligini turlicha tekshiramiz
+                message = messaging_event.get('message', {})
+                message_text = message.get('text')
+                
+                # Agar bu shunchaki tahrirlash bo'lsa, kodimiz buni aniqlaydi
+                if message_text:
+                    reply_text = "Assalomu alaykum! Xabaringizni qabul qildik. Tez orada sizga javob beramiz."
+                    send_message(sender_id, reply_text)
+                else:
+                    print("Xabar matni topilmadi, bu tizimli xabar bo'lishi mumkin.")
 
     return "EVENT_RECEIVED", 200
 
