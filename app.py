@@ -5,7 +5,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 VERIFY_TOKEN = "mening_maxfiy_parolim_123"
-# O'zingiz olgan uzun tokenni pastdagi qo'shtirnoq ichiga joylang:
+# O'zingiz olgan uzun tokenni pastdagi qo'shtirnoq ichiga joylang!
 PAGE_ACCESS_TOKEN = "IGAAdHTWj0GMhBZAFlnUE9KYUFKQkVTQmpDZAGZAockNzMzZAtbE1FSXY5VGtWamx6NTNfWHR4dEk0TWdnX2pJczVIU3RLWmEtajBwWS1MTFBXdXZAuUXlqeW9FeER4UVQ2cElnTDhoMG1lcjllbG5QTXVaYWpfLU93ZAU5HOE1lXzdvSQZDZD"
 
 @app.route('/', methods=['GET'])
@@ -26,28 +26,44 @@ def verify_webhook():
 @app.route('/webhook', methods=['POST'])
 def receive_message():
     data = request.json
-    print("KELGAN DATA:", data) # Nima kelayotganini aniq ko'ramiz
+    print("KELGAN DATA:", data)
 
     if data.get('object') == 'instagram':
         for entry in data.get('entry', []):
+            
+            # ==========================================
+            # 1. DIRECT XABARLARNI USHBLASH (MESSAGING)
+            # ==========================================
             for messaging_event in entry.get('messaging', []):
-                sender_id = messaging_event.get('sender', {}).get('id')
-                
-                # Yangi kod: xabar matni borligini turlicha tekshiramiz
-                message = messaging_event.get('message', {})
-                message_text = message.get('text')
-                
-                # Agar bu shunchaki tahrirlash bo'lsa, kodimiz buni aniqlaydi
-                if message_text:
-                    reply_text = "Assalomu alaykum! Xabaringizni qabul qildik. Tez orada sizga javob beramiz."
-                    send_message(sender_id, reply_text)
-                else:
-                    print("Xabar matni topilmadi, bu tizimli xabar bo'lishi mumkin.")
+                # Faqat matni bor yangi xabarlarga javob berish
+                if 'message' in messaging_event and 'text' in messaging_event['message']:
+                    sender_id = messaging_event['sender']['id']
+                    message_text = messaging_event['message']['text']
+                    
+                    # DIRECT UCHUN O'ZINGIZNING JAVOBINGIZNI SHU YERGA YOZING:
+                    reply_text = f"Assalomu alaykum! '{message_text}' xabarini oldik. Tez orada javob beramiz!"
+                    send_dm(sender_id, reply_text)
+
+            # ==========================================
+            # 2. KOMMENTARIYALARNI USHLASH (CHANGES)
+            # ==========================================
+            for change_event in entry.get('changes', []):
+                if change_event.get('field') == 'comments':
+                    value = change_event.get('value', {})
+                    
+                    # Agar haqiqatan ham komment kelgan bo'lsa
+                    if value.get('item') == 'comment':
+                        comment_id = value.get('id')
+                        comment_text = value.get('text')
+                        
+                        # KOMMENT UCHUN O'ZINGIZNING JAVOBINGIZNI SHU YERGA YOZING:
+                        reply_text = f"Fikringiz uchun rahmat! Sizga Direct orqali batafsil ma'lumot yuboramiz."
+                        reply_to_comment(comment_id, reply_text)
 
     return "EVENT_RECEIVED", 200
 
-def send_message(recipient_id, text):
-    # Meta'ning xabar yuborish API manzili
+def send_dm(recipient_id, text):
+    """Directga xabar yuborish funksiyasi"""
     url = f"https://graph.facebook.com/v19.0/me/messages"
     params = {"access_token": PAGE_ACCESS_TOKEN}
     headers = {"Content-Type": "application/json"}
@@ -55,10 +71,16 @@ def send_message(recipient_id, text):
         "recipient": {"id": recipient_id},
         "message": {"text": text}
     }
-    
-    # Xabarni yuborish
     response = requests.post(url, params=params, headers=headers, json=payload)
-    print("JAVOB YUBORISH HOLATI:", response.text)
+    print("DIRECT JAVOB HOLATI:", response.text)
+
+def reply_to_comment(comment_id, text):
+    """Kommentariyaning tagiga (reply qilib) javob yozish funksiyasi"""
+    url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
+    params = {"access_token": PAGE_ACCESS_TOKEN}
+    payload = {"message": text}
+    response = requests.post(url, params=params, json=payload)
+    print("KOMMENT JAVOB HOLATI:", response.text)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
