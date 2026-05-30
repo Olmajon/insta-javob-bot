@@ -5,7 +5,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 VERIFY_TOKEN = "mening_maxfiy_parolim_123"
-# O'zingiz olgan uzun tokenni pastdagi qo'shtirnoq ichiga joylang!
+# O'zingizning uzooon oltin kalitingizni (Token) pastdagi qo'shtirnoq ichiga aniq joylang!
 PAGE_ACCESS_TOKEN = "IGAAdHTWj0GMhBZAFlmdHM1RVpuX1ktWUdPcXp6WEVlMm9lU0dZAVEZAJZAGw1SDI0aFVJLWpJekdBcExNdkY4NF94bE1NOERVWGNTTmNyMGI3Wmw3V3RJTkphaTJUU251R0tySXNPejdTVnQ2TUFHYm5ZAeTY2bmJBMWx1U2VWc2U3NAZDZD"
 
 @app.route('/', methods=['GET'])
@@ -32,31 +32,41 @@ def receive_message():
         for entry in data.get('entry', []):
             
             # ==========================================
-            # 1. DIRECT XABARLARNI USHBLASH (MESSAGING)
+            # 1. JONLI REJIM: MESSAGING ICHIDAN QIDIRISH
             # ==========================================
             for messaging_event in entry.get('messaging', []):
-                # Faqat matni bor yangi xabarlarga javob berish
                 if 'message' in messaging_event and 'text' in messaging_event['message']:
                     sender_id = messaging_event['sender']['id']
                     message_text = messaging_event['message']['text']
                     
-                    # DIRECT UCHUN O'ZINGIZNING JAVOBINGIZNI SHU YERGA YOZING:
+                    print(f"JONLI XABAR KELDI: {message_text}")
                     reply_text = f"Assalomu alaykum! '{message_text}' xabarini oldik. Tez orada javob beramiz!"
                     send_dm(sender_id, reply_text)
 
             # ==========================================
-            # 2. KOMMENTARIYALARNI USHLASH (CHANGES)
+            # 2. SINOV REJIMI VA KOMMENTLAR: CHANGES ICHIDAN QIDIRISH
             # ==========================================
             for change_event in entry.get('changes', []):
-                if change_event.get('field') == 'comments':
-                    value = change_event.get('value', {})
-                    
-                    # Agar haqiqatan ham komment kelgan bo'lsa
-                    if value.get('item') == 'comment':
-                        comment_id = value.get('id')
-                        comment_text = value.get('text')
+                field = change_event.get('field')
+                value = change_event.get('value', {})
+                
+                # A) Agar TEST rejimida xabar (messages) kelsa
+                if field == 'messages':
+                    if 'message' in value and 'text' in value['message']:
+                        sender_id = value.get('sender', {}).get('id', '12334')
+                        message_text = value['message']['text']
                         
-                        # KOMMENT UCHUN O'ZINGIZNING JAVOBINGIZNI SHU YERGA YOZING:
+                        print(f"TEST XABARI KELDI: {message_text}")
+                        reply_text = f"Test xabari muvaffaqiyatli qabul qilindi! Kod ishlayapti."
+                        send_dm(sender_id, reply_text)
+                
+                # B) Agar KOMMENTARIYA (comments) kelsa
+                elif field == 'comments':
+                    if value.get('item') == 'comment' or 'text' in value:
+                        comment_id = value.get('id', '17865799348089039')
+                        comment_text = value.get('text', '')
+                        
+                        print(f"KOMMENTARIYA KELDI: {comment_text}")
                         reply_text = f"Fikringiz uchun rahmat! Sizga Direct orqali batafsil ma'lumot yuboramiz."
                         reply_to_comment(comment_id, reply_text)
 
@@ -64,7 +74,7 @@ def receive_message():
 
 def send_dm(recipient_id, text):
     """Directga xabar yuborish funksiyasi"""
-    url = f"https://graph.facebook.com/v19.0/me/messages"
+    url = "https://graph.facebook.com/v19.0/me/messages"
     params = {"access_token": PAGE_ACCESS_TOKEN}
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -75,7 +85,7 @@ def send_dm(recipient_id, text):
     print("DIRECT JAVOB HOLATI:", response.text)
 
 def reply_to_comment(comment_id, text):
-    """Kommentariyaning tagiga (reply qilib) javob yozish funksiyasi"""
+    """Kommentariyaning tagiga javob yozish funksiyasi"""
     url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
     params = {"access_token": PAGE_ACCESS_TOKEN}
     payload = {"message": text}
