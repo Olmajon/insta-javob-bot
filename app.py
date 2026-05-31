@@ -31,7 +31,6 @@ def check():
     if not ACCESS_TOKEN:
         return jsonify({"xato": "ACCESS_TOKEN yo'q! Render > Environment ga qo'shing."}), 400
 
-    # Yangi Instagram API bilan tekshirish
     r = requests.get(
         "https://graph.instagram.com/v25.0/me",
         params={"access_token": ACCESS_TOKEN, "fields": "id,name,username"}
@@ -51,7 +50,6 @@ def setup():
     if not INSTAGRAM_ACCOUNT_ID:
         return jsonify({"xato": "INSTAGRAM_ACCOUNT_ID yo'q!"}), 400
 
-    # Yangi Instagram API subscription
     url = f"https://graph.instagram.com/v25.0/{INSTAGRAM_ACCOUNT_ID}/subscribed_apps"
     r = requests.post(url, params={
         "access_token": ACCESS_TOKEN,
@@ -60,7 +58,7 @@ def setup():
     result = r.json()
     print("SETUP natijasi:", result)
 
-    if result.get("success"):
+    if result.get("success") or result.get("data"):
         return jsonify({"holat": "✅ Muvaffaqiyatli! Bot tayyor."})
     else:
         return jsonify({"holat": "❌ Xato", "natija": result}), 400
@@ -88,6 +86,8 @@ def receive_message():
 
     if data.get('object') == 'instagram':
         for entry in data.get('entry', []):
+            # Agar Meta bot_id ni yubormasa, zaxira sifatida sizning IG_ID ni oladi
+            current_bot_id = INSTAGRAM_ACCOUNT_ID if INSTAGRAM_ACCOUNT_ID else entry.get('id', 'me')
 
             # 1. JONLI DIRECT MESSAGES
             for event in entry.get('messaging', []):
@@ -98,9 +98,14 @@ def receive_message():
                     sender_id = event['sender']['id']
                     text = msg['text']
                     print(f"💬 DM keldi: {sender_id} → {text}")
-                    send_dm(sender_id, "Assalomu alaykum! Xabaringizni oldik, tez orada javob beramiz 🙏")
+                    
+                    # Test foydalanuvchilarini chetlab o'tamiz
+                    if sender_id in ('12334', '12345', '0'):
+                        print("ℹ️ Test xabar, yuborilmadi.")
+                    else:
+                        send_dm(current_bot_id, sender_id, "Assalomu alaykum! Xabaringizni oldik, tez orada javob beramiz 🙏")
 
-            # 2. CHANGES (kommentlar)
+            # 2. CHANGES (kommentlar va test xabarlar)
             for change in entry.get('changes', []):
                 field = change.get('field')
                 value = change.get('value', {})
@@ -110,8 +115,8 @@ def receive_message():
                     if 'text' in msg:
                         sender_id = value.get('sender', {}).get('id', '')
                         print(f"📨 Changes DM: sender={sender_id}")
-                        if sender_id and sender_id not in ('12334', '0'):
-                            send_dm(sender_id, "Assalomu alaykum! Xabaringizni oldik 🙏")
+                        if sender_id and sender_id not in ('12334', '12345', '0'):
+                            send_dm(current_bot_id, sender_id, "Assalomu alaykum! Xabaringizni oldik 🙏")
                         else:
                             print("ℹ️ Test xabar, yuborilmadi.")
 
@@ -120,34 +125,42 @@ def receive_message():
                     comment_text = value.get('text', '')
                     username = value.get('from', {}).get('username', '')
                     print(f"💭 Komment: @{username}: {comment_text}")
+                    
                     if comment_id:
-                        reply_to_comment(comment_id, "Rahmat! Savollar uchun DM yozing 📩")
+                        if username == 'test' or comment_id == '17865799348089039':
+                            print("ℹ️ Test komment, yuborilmadi.")
+                        else:
+                            reply_to_comment(comment_id, "Rahmat! Savollar uchun DM yozing 📩")
 
     return "EVENT_RECEIVED", 200
 
 
 # ============================================================
-# YORDAMCHI FUNKSIYALAR — YANGI Instagram API
+# YORDAMCHI FUNKSIYALAR — TO'G'RILANGAN INSTAGRAM API
 # ============================================================
 
-def send_dm(recipient_id, text):
+def send_dm(bot_id, recipient_id, text):
     """
     Yangi Instagram API orqali DM yuborish
-    graph.instagram.com/v25.0/me/messages
+    ✅ 'me' o'rniga haqiqiy bot_id qo'yildi va token header ichiga joylandi
     """
     if not ACCESS_TOKEN:
         print("❌ ACCESS_TOKEN yo'q!")
         return
 
-    url = "https://graph.instagram.com/v25.0/me/messages"
+    url = f"https://graph.instagram.com/v25.0/{bot_id}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
     payload = {
         "recipient": {"id": recipient_id},
-        "message": {"text": text},
-        "messaging_type": "RESPONSE",
-        "access_token": ACCESS_TOKEN
+        "message": {"text": text}
     }
 
-    r = requests.post(url, json=payload)
+    r = requests.post(url, headers=headers, json=payload)
     result = r.json()
 
     if r.status_code == 200:
@@ -158,18 +171,23 @@ def send_dm(recipient_id, text):
 
 
 def reply_to_comment(comment_id, text):
-    """Kommentga javob"""
+    """Kommentga javob - Yangi Instagram API formatida"""
     if not ACCESS_TOKEN:
         print("❌ ACCESS_TOKEN yo'q!")
         return
 
     url = f"https://graph.instagram.com/v25.0/{comment_id}/replies"
+    
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
     payload = {
-        "message": text,
-        "access_token": ACCESS_TOKEN
+        "message": text
     }
 
-    r = requests.post(url, json=payload)
+    r = requests.post(url, headers=headers, json=payload)
     result = r.json()
 
     if r.status_code == 200:
@@ -181,5 +199,4 @@ def reply_to_comment(comment_id, text):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"🚀 Bot port {port} da ishga tushdi")
-    print(f"🔑 Token: {'✅' if ACCESS_TOKEN else '❌ YOQ!'}")
     app.run(host='0.0.0.0', port=port)
