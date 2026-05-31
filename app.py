@@ -1,80 +1,105 @@
 import os
 import requests
-from flask import Flask, request
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "mening_maxfiy_parolim_123")
 PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN", "")
-# Render > Environment ga qo'shing (quyida avtomatik topish yo'li bor)
 INSTAGRAM_ACCOUNT_ID = os.environ.get("INSTAGRAM_ACCOUNT_ID", "")
 
-def get_instagram_account_id():
-    """
-    Avtomatik Instagram Business Account ID topish.
-    Bir marta ishga tushganda aniqlanadi.
-    """
-    global INSTAGRAM_ACCOUNT_ID
-    if INSTAGRAM_ACCOUNT_ID:
-        return INSTAGRAM_ACCOUNT_ID
-
-    if not PAGE_ACCESS_TOKEN:
-        print("❌ PAGE_ACCESS_TOKEN yo'q!")
-        return None
-
-    # 1. Page ID olish
-    r = requests.get(
-        "https://graph.facebook.com/v21.0/me/accounts",
-        params={"access_token": PAGE_ACCESS_TOKEN}
-    )
-    data = r.json()
-    print("📋 Pages:", data)
-
-    pages = data.get("data", [])
-    if not pages:
-        print("❌ Hech qanday Page topilmadi. Token Page Access Token emasmi?")
-        return None
-
-    page_id = pages[0]["id"]
-    page_token = pages[0].get("access_token", PAGE_ACCESS_TOKEN)
-    print(f"✅ Page ID: {page_id}")
-
-    # 2. Instagram Business Account ID olish
-    r2 = requests.get(
-        f"https://graph.facebook.com/v21.0/{page_id}",
-        params={
-            "fields": "instagram_business_account",
-            "access_token": page_token
-        }
-    )
-    data2 = r2.json()
-    print("📋 Instagram account:", data2)
-
-    ig_account = data2.get("instagram_business_account", {})
-    ig_id = ig_account.get("id")
-
-    if ig_id:
-        INSTAGRAM_ACCOUNT_ID = ig_id
-        print(f"✅ Instagram Business Account ID: {ig_id}")
-        print(f"👉 Render > Environment > INSTAGRAM_ACCOUNT_ID = {ig_id}  qilib saqlang!")
-    else:
-        print("❌ Instagram Business Account topilmadi.")
-        print("   Instagram sahifangiz Facebook Page ga ulangan bo'lishi kerak!")
-
-    return ig_id
-
+# ============================================================
+# ASOSIY SAHIFALAR
+# ============================================================
 
 @app.route('/', methods=['GET'])
 def home():
-    ig_id = INSTAGRAM_ACCOUNT_ID or get_instagram_account_id()
     token_ok = "✅ Bor" if PAGE_ACCESS_TOKEN else "❌ Yo'q"
-    ig_ok = f"✅ {ig_id}" if ig_id else "❌ Topilmadi"
+    ig_ok = f"✅ {INSTAGRAM_ACCOUNT_ID}" if INSTAGRAM_ACCOUNT_ID else "❌ Yo'q"
     return (
         f"<h2>Instagram Bot ✅ Ishlayapti</h2>"
-        f"<p>🔑 Token: {token_ok}</p>"
-        f"<p>📱 Instagram ID: {ig_ok}</p>"
+        f"<p>🔑 PAGE_ACCESS_TOKEN: {token_ok}</p>"
+        f"<p>📱 INSTAGRAM_ACCOUNT_ID: {ig_ok}</p>"
+        f"<hr>"
+        f"<p>⚙️ Subscription o'rnatish: <a href='/setup'>/setup</a> sahifasini oching</p>"
+        f"<p>🔍 Token tekshirish: <a href='/check'>/check</a> sahifasini oching</p>"
     ), 200
 
+
+@app.route('/check', methods=['GET'])
+def check():
+    """Token va account ID ni tekshirish"""
+    if not PAGE_ACCESS_TOKEN:
+        return jsonify({"error": "PAGE_ACCESS_TOKEN yo'q! Render > Environment ga qo'shing."}), 400
+
+    r = requests.get(
+        "https://graph.facebook.com/v21.0/me",
+        params={"access_token": PAGE_ACCESS_TOKEN, "fields": "id,name"}
+    )
+    me = r.json()
+
+    r2 = requests.get(
+        "https://graph.facebook.com/v21.0/me/accounts",
+        params={"access_token": PAGE_ACCESS_TOKEN}
+    )
+    pages = r2.json()
+
+    ig_info = None
+    if INSTAGRAM_ACCOUNT_ID:
+        r3 = requests.get(
+            f"https://graph.facebook.com/v21.0/{INSTAGRAM_ACCOUNT_ID}",
+            params={"access_token": PAGE_ACCESS_TOKEN, "fields": "id,name,username"}
+        )
+        ig_info = r3.json()
+
+    return jsonify({
+        "token_info": me,
+        "pages": pages,
+        "instagram_account": ig_info,
+        "env": {
+            "PAGE_ACCESS_TOKEN": "✅ Bor" if PAGE_ACCESS_TOKEN else "❌ Yo'q",
+            "INSTAGRAM_ACCOUNT_ID": INSTAGRAM_ACCOUNT_ID or "❌ Yo'q"
+        }
+    })
+
+
+@app.route('/setup', methods=['GET'])
+def setup():
+    """
+    Instagram webhook subscription o'rnatish.
+    Bir marta shu sahifani oching: https://sizning-bot.onrender.com/setup
+    """
+    if not PAGE_ACCESS_TOKEN:
+        return jsonify({"error": "PAGE_ACCESS_TOKEN yo'q!"}), 400
+    if not INSTAGRAM_ACCOUNT_ID:
+        return jsonify({"error": "INSTAGRAM_ACCOUNT_ID yo'q! Render > Environment ga qo'shing."}), 400
+
+    # Instagram account uchun app subscription
+    url = f"https://graph.facebook.com/v21.0/{INSTAGRAM_ACCOUNT_ID}/subscribed_apps"
+    r = requests.post(url, params={
+        "access_token": PAGE_ACCESS_TOKEN,
+        "subscribed_fields": "messages,comments,mentions,story_insights"
+    })
+    result = r.json()
+    print("SETUP natijasi:", result)
+
+    if result.get("success"):
+        return jsonify({
+            "status": "✅ Muvaffaqiyatli!",
+            "message": "Webhook subscription o'rnatildi. Endi Instagram DM va kommentlarga javob beradi.",
+            "result": result
+        })
+    else:
+        return jsonify({
+            "status": "❌ Xato",
+            "result": result,
+            "tavsiya": "Token Page Access Token bo'lishi kerak. /check sahifasini tekshiring."
+        }), 400
+
+
+# ============================================================
+# WEBHOOK
+# ============================================================
 
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
@@ -107,7 +132,7 @@ def receive_message():
                     print(f"💬 DM keldi: {sender_id} → {text}")
                     send_dm(sender_id, "Assalomu alaykum! Xabaringizni oldik, tez orada javob beramiz 🙏")
 
-            # 2. CHANGES (kommentlar, test xabarlar)
+            # 2. CHANGES
             for change in entry.get('changes', []):
                 field = change.get('field')
                 value = change.get('value', {})
@@ -116,10 +141,11 @@ def receive_message():
                     msg = value.get('message', {})
                     if 'text' in msg:
                         sender_id = value.get('sender', {}).get('id', '')
-                        print(f"📨 Changes DM: {msg['text']}")
-                        # Test xabar (sender_id = '12334') bo'lsa yuborma
-                        if sender_id and sender_id != '12334':
-                            send_dm(sender_id, "Xabaringizni qabul qildik! ✅")
+                        text = msg['text']
+                        print(f"📨 Changes DM: sender={sender_id}, text={text}")
+                        # Test xabar (Facebook test sender ID = '12334')
+                        if sender_id and sender_id not in ('12334', '0'):
+                            send_dm(sender_id, "Assalomu alaykum! Xabaringizni oldik 🙏")
                         else:
                             print("ℹ️ Test xabar, yuborilmadi.")
 
@@ -127,28 +153,28 @@ def receive_message():
                     comment_id = value.get('id', '')
                     comment_text = value.get('text', '')
                     username = value.get('from', {}).get('username', 'foydalanuvchi')
-                    print(f"💭 Komment: @{username}: {comment_text}")
+                    commenter_id = value.get('from', {}).get('id', '')
+                    print(f"💭 Komment: @{username} ({commenter_id}): {comment_text}")
                     if comment_id:
-                        reply_to_comment(comment_id, "Rahmat! Savollar uchun DM yozing 📩")
+                        reply_to_comment(comment_id, "Rahmat! Batafsil ma'lumot uchun DM yozing 📩")
 
     return "EVENT_RECEIVED", 200
 
 
+# ============================================================
+# YORDAMCHI FUNKSIYALAR
+# ============================================================
+
 def send_dm(recipient_id, text):
-    """
-    Instagram Direct Message yuborish.
-    Instagram Business Account ID orqali.
-    """
+    """Instagram Direct Message yuborish"""
     if not PAGE_ACCESS_TOKEN:
-        print("❌ TOKEN YO'Q!")
+        print("❌ PAGE_ACCESS_TOKEN yo'q!")
+        return
+    if not INSTAGRAM_ACCOUNT_ID:
+        print("❌ INSTAGRAM_ACCOUNT_ID yo'q! Render > Environment ga qo'shing.")
         return
 
-    ig_id = INSTAGRAM_ACCOUNT_ID or get_instagram_account_id()
-    if not ig_id:
-        print("❌ INSTAGRAM_ACCOUNT_ID topilmadi, DM yuborib bo'lmaydi!")
-        return
-
-    url = f"https://graph.facebook.com/v21.0/{ig_id}/messages"
+    url = f"https://graph.facebook.com/v21.0/{INSTAGRAM_ACCOUNT_ID}/messages"
     payload = {
         "recipient": {"id": recipient_id},
         "message": {"text": text},
@@ -160,18 +186,20 @@ def send_dm(recipient_id, text):
     result = r.json()
 
     if r.status_code == 200:
-        print(f"✅ DM yuborildi → {recipient_id}")
+        print(f"✅ DM yuborildi → {recipient_id}: {text}")
     else:
         err = result.get('error', {})
-        print(f"❌ DM xato [{r.status_code}]: {err.get('message')}")
+        print(f"❌ DM xato [{r.status_code}]: code={err.get('code')} | {err.get('message')}")
         if err.get('code') == 190:
             print("🔑 Token eskirgan! Render > Environment > PAGE_ACCESS_TOKEN yangilang.")
+        elif err.get('code') == 100:
+            print("🔒 Permission xato. instagram_manage_messages ruxsati bormi?")
 
 
 def reply_to_comment(comment_id, text):
-    """Kommentga javob."""
+    """Kommentga javob berish"""
     if not PAGE_ACCESS_TOKEN:
-        print("❌ TOKEN YO'Q!")
+        print("❌ PAGE_ACCESS_TOKEN yo'q!")
         return
 
     url = f"https://graph.facebook.com/v21.0/{comment_id}/replies"
@@ -189,12 +217,9 @@ def reply_to_comment(comment_id, text):
         print(f"❌ Komment xato [{r.status_code}]: {result.get('error', {}).get('message')}")
 
 
-# Server ishga tushganda ID ni oldindan aniqlash
-if PAGE_ACCESS_TOKEN and not INSTAGRAM_ACCOUNT_ID:
-    print("🔍 Instagram Account ID aniqlanmoqda...")
-    get_instagram_account_id()
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"🚀 Bot port {port} da ishga tushdi")
+    print(f"🔑 Token: {'✅' if PAGE_ACCESS_TOKEN else '❌ YOQ!'}")
+    print(f"📱 Instagram ID: {INSTAGRAM_ACCOUNT_ID or '❌ YOQ!'}")
     app.run(host='0.0.0.0', port=port)
