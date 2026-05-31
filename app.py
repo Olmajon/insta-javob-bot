@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 VERIFY_TOKEN = "mening_maxfiy_parolim_123"
 # O'zingizning uzooon oltin kalitingizni (Token) pastdagi qo'shtirnoq ichiga aniq joylang!
-PAGE_ACCESS_TOKEN = "IGAAdHTWj0GMhBZAGFacmpMS2J4eHhmTWtySU9JMUlfc20zOXFiTjROTGhTcTdaUlozYm1GVTNIenpDSWNRY3FtbmVRWkttSlduRm0wY2E3dWVzWW12SG9Pa0d3UVJvTjVXQnNJREQ4RjhTQWFZAMXE2U2Y4REtqNXVRS0lmTWxQcwZDZD"
+PAGE_ACCESS_TOKEN = "IGAAf0K4ZBVGZCdBZAGFWeFBjM1FRMWJnVGg4dWpRc2NZAcEFjZA1BHTEU4WjVjTFB1ZA09GdFlzZAUo2Y1kxU0FUQV9GOUJlbHF4OUFtNktRdk9UOVZA0ZADhLVFNLQVphMzV4bUVDVndCMGJOQ0pPMlhvb1pzVTdIaHU5am1IVEgtbTZAUWQZDZD"
 
 @app.route('/', methods=['GET'])
 def home():
